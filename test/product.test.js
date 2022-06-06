@@ -1,75 +1,78 @@
 const { expect } = require("chai");
 const { ethers } = require("hardhat");
 
-describe("Product", function () {
-  let ERC20, ERC20Src, receiver, owner;
+let tokenDecimals = 18;
+
+function getTokenAmount(amount) {
+  return ethers.BigNumber.from(10).pow(tokenDecimals).mul(amount);
+}
+
+
+describe("Product: ", function () {
+  let ERC20, Product, Terminal, LayerZeroEndpointMock;
+  let subscriber, receiver, owner;
+  let TestERC20Token; 
+  let product, terminal, token;
+  let lzEndpointBaseMock, lzEndpointRemoteMock;
+
+  const chainIdBase = 1; // Base chain
+  const chainIdRemote = 2;  // Remote Chain
 
   before(async function () {
-    accounts = await ethers.getSigners();
-
-    owner = accounts[0];
-    receiver = accounts[1];
-
+    [owner, receiver, subscriber ] = await ethers.getSigners();
+    TestERC20Token = await ethers.getContractFactory("TestERC20Token");
     ERC20= await ethers.getContractFactory("ERC20Mock");
+    Product = await ethers.getContractFactory("Product");
+    Terminal = await ethers.getContractFactory("Terminal");
+    LayerZeroEndpointMock = await ethers.getContractFactory(
+      "LZEndpointMock"
+    );
   });
 
   beforeEach(async function () {
     // use this chainId
     this.chainId = 123;
 
-    // deploy a test ERC20 mock
-    ERC20Src = await ERC20.deploy("TEST", "TESTTOKEN");
-    ERC20Src.mint(owner.address, "999999999999");
-    this.tokenAddress = ERC20Src.address;
+    token = await TestERC20Token.deploy("TESTTOKEN", "TT");
+    expect(await token.balanceOf(owner.address)).to.be.equal(getTokenAmount(100000000));
+    expect(await token.balanceOf(receiver.address)).to.be.equal("0")
+    expect(await token.balanceOf(subscriber.address)).to.be.equal("0")
 
+    tokenDecimals = await token.decimals();
 
-    expect(await ERC20Src.balanceOf(owner.address)).to.be.equal("999999999999")
-    expect(await ERC20Src.balanceOf(receiver.address)).to.be.equal("0")
-
-    // create a LayerZero Endpoint mock for testing
-    const LayerZeroEndpointMock = await ethers.getContractFactory(
-      "LZEndpointMock"
-    );
-    this.lzEndpointMock = await LayerZeroEndpointMock.deploy(this.chainId);
-
-    // Create terminal on chain A (source A)
-    console.log(`Creating a terminal. ${receiver.address}`);
-    const Terminal = await ethers.getContractFactory("Terminal");
-    this.terminalA = await Terminal.deploy(
-      this.lzEndpointMock.address,
+    // depploy layer zero endpoint mocks
+    lzEndpointBaseMock = await LayerZeroEndpointMock.deploy(chainIdBase);
+    lzEndpointRemoteMock = await LayerZeroEndpointMock.deploy(chainIdRemote);
+    
+    // create terminal and product contracts 
+    terminal = await Terminal.deploy(
+      lzEndpointRemoteMock.address,
       receiver.address,
-      this.tokenAddress
-    );
+      token.address
+      );
+    product = await Product.deploy(lzEndpointBaseMock.address);
 
-    // create two product instances
-    const Product = await ethers.getContractFactory("Product");
-    this.product = await Product.deploy(this.lzEndpointMock.address);
-
-    this.lzEndpointMock.setDestLzEndpoint(
-      this.terminalA.address,
-      this.lzEndpointMock.address
-    );
-    this.lzEndpointMock.setDestLzEndpoint(
-      this.product.address,
-      this.lzEndpointMock.address
-    );
+    lzEndpointBaseMock.setDestLzEndpoint(terminal.address, lzEndpointRemoteMock.address);
+    lzEndpointRemoteMock.setDestLzEndpoint(product.address, lzEndpointBaseMock.address);
 
     // sets the contract's source address so they can communicate
-    this.terminalA.setTrustedRemote(this.chainId, this.product.address);
-    this.product.setTrustedRemote(this.chainId, this.terminalA.address);
+    await terminal.setTrustedRemote(chainIdBase, product.address);
+    await product.setTrustedRemote(chainIdRemote, terminal.address);
+
   });
 
   it("User can subscribe to the contract", async function () {
-    expect(await this.product.index()).to.be.equal(0); // initial value`
-    expect(await ERC20Src.balanceOf(owner.address)).to.be.equal("999999999999")
 
+    await token.transfer(subscriber.address, getTokenAmount(5));
+    expect(await token.balanceOf(subscriber.address)).to.be.equal(getTokenAmount(5));
 
-    ERC20Src.approve(this.product.address, "999999999999");
-    expect(await ERC20Src.allowance(owner.address, this.product.address)).to.be.equal("999999999999")
+    // user approves contract to spend
+    await token.connect(subscriber).approve(terminal.address, getTokenAmount(5));
 
+    expect(await product.index()).to.be.equal(0); // initial value`
 
-    await this.terminalA.subscribe(this.chainId, this.product.address, 1);
+    await terminal.connect(subscriber).subscribe(chainIdBase, product.address, 1);
 
-    expect(await this.product.index()).to.be.equal(1); // initial value
+    expect(await product.index()).to.be.equal(1); // initial value
   });
 });
