@@ -3,7 +3,8 @@
 pragma solidity 0.8.4;
 
 import "../lzApp/NonblockingLzApp.sol";
-import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 
 /**
     @dev The contract will be deployed on remote chains, and any user can use it to subscribe to
@@ -14,12 +15,15 @@ contract Terminal is NonblockingLzApp {
     // constant files
     address public token; // address of the token (e.g. USDC)
     address public receivingAddress;
+    // TODO: this subscription amount should be queried from the base contract
+
+    uint256 public subscriptionAmount = 1;
 
     constructor(
         address _lzEndpoint,
         address receivingAddress_,
         address token_
-    ) NonblockingLzApp(_lzEndpoint) {
+    )  NonblockingLzApp(_lzEndpoint) {
         receivingAddress = receivingAddress_;
         token = token_;
     }
@@ -32,6 +36,38 @@ contract Terminal is NonblockingLzApp {
         uint64,
         bytes memory
     ) internal override {}
+
+    // /**
+    //  * @notice Subscribes to the product after submitting a permit to the PeriodicAllowanceProxy.
+    //  *         Owner, token, spender, value, and secondsPerPeriod are inferred.
+    //  * @param startTime the start time of the permit
+    //  * @param deadline the time at which the permit expires
+    //  * @param v signature v
+    //  * @param r signature r
+    //  * @param s signature s
+    //  */
+    // function subscribeWithPermit(
+    //     uint256 startTime,
+    //     uint256 deadline,
+    //     uint8 v,
+    //     bytes32 r,
+    //     bytes32 s
+    // ) public {
+    //     allowanceProxy.permit(
+    //         _msgSender(), // owner
+    //         subPriceToken, // token
+    //         address(this), // this address, duh
+    //         subPriceAmount, // value
+    //         startTime,
+    //         subPeriod, // secondsPerPeriod
+    //         deadline,
+    //         v,
+    //         r,
+    //         s
+    //     );
+
+    //     _subscribe(_msgSender(), _msgSender(), true);
+    // }
 
     // when user subscribes, we should first transfer the USDC and then perform a remote mint
     function subscribe(
@@ -47,19 +83,17 @@ contract Terminal is NonblockingLzApp {
             "you must allow inbound mesages"
         );
 
-        // TODO fetch the amount of money that needs to be subscribed
-        uint256 amount = 1;
-
         // TODO change this to the periodic allowance contract
         require(
-            IERC20(token).transferFrom(msg.sender, receivingAddress, amount),
+            IERC20(token).transferFrom(msg.sender, receivingAddress, subscriptionAmount),
             "transfer failed"
         );
+        bytes memory payload = abi.encode(msg.sender);
 
         // example payload that can be wrapped
         _lzSend(
             _dstChainId,
-            bytes(""),
+            payload,
             payable(msg.sender),
             address(0x0),
             bytes("")
