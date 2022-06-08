@@ -10,16 +10,17 @@ function getTokenAmount(amount) {
 
 describe("Product: ", function () {
   let ERC20, Product, Terminal, LayerZeroEndpointMock;
-  let subscriber, receiver, owner;
+  let subscriber, subscriber2, receiver, owner;
   let TestERC20Token;
-  let product, terminal, token;
+  let product, terminal, terminalB, token, tokenB;
   let lzEndpointBaseMock, lzEndpointRemoteMock;
 
   const chainIdBase = 1; // Base chain
-  const chainIdRemote = 2; // Remote Chain
+  const chainIdRemoteA = 2; // Remote Chain A
+  const chainIdRemoteB = 3; // Remote Chain B
 
   before(async function () {
-    [owner, receiver, subscriber] = await ethers.getSigners();
+    [owner, receiver, subscriber, subscriber2] = await ethers.getSigners();
     TestERC20Token = await ethers.getContractFactory("TestERC20Token");
     ERC20 = await ethers.getContractFactory("ERC20Mock");
     Product = await ethers.getContractFactory("Product");
@@ -28,10 +29,8 @@ describe("Product: ", function () {
   });
 
   beforeEach(async function () {
-    // use this chainId
-    this.chainId = 123;
-
     token = await TestERC20Token.deploy("TESTTOKEN", "TT");
+    tokenB = await TestERC20Token.deploy("TESTTOKENB", "TTB"); // test token for chain B
     expect(await token.balanceOf(owner.address)).to.be.equal(
       getTokenAmount(100000000)
     );
@@ -40,15 +39,21 @@ describe("Product: ", function () {
 
     tokenDecimals = await token.decimals();
 
-    // depploy layer zero endpoint mocks
+    // deploy layer zero endpoint mocks
     lzEndpointBaseMock = await LayerZeroEndpointMock.deploy(chainIdBase);
-    lzEndpointRemoteMock = await LayerZeroEndpointMock.deploy(chainIdRemote);
+    lzEndpointRemoteMock = await LayerZeroEndpointMock.deploy(chainIdRemoteA);
+    lzEndpointRemoteBMock = await LayerZeroEndpointMock.deploy(chainIdRemoteB); // mocks for chain B
 
     // create terminal and product contracts
     terminal = await Terminal.deploy(
       lzEndpointRemoteMock.address,
       receiver.address,
       token.address
+    );
+    terminalB = await Terminal.deploy(
+      lzEndpointRemoteBMock.address,
+      receiver.address,
+      tokenB.address
     );
     product = await Product.deploy(lzEndpointBaseMock.address);
 
@@ -60,10 +65,17 @@ describe("Product: ", function () {
       product.address,
       lzEndpointBaseMock.address
     );
+    lzEndpointRemoteBMock.setDestLzEndpoint(
+      product.address,
+      lzEndpointBaseMock.address
+    );
 
     // sets the contract's source address so they can communicate
     await terminal.setTrustedRemote(chainIdBase, product.address);
-    await product.setTrustedRemote(chainIdRemote, terminal.address);
+    await terminalB.setTrustedRemote(chainIdBase, product.address);
+    await product.setTrustedRemote(chainIdRemoteA, terminal.address);
+    await product.setTrustedRemote(chainIdRemoteB, terminalB.address);
+
   });
 
   it("User can subscribe to the contract", async function () {
@@ -81,8 +93,43 @@ describe("Product: ", function () {
 
     await expect(
       terminal.connect(subscriber).subscribe(chainIdBase, product.address, 1)
-    ).to.emit(product, "Subscribe");
+    )
+      .to.emit(product, "Subscribe")
+      .withArgs(chainIdRemoteA, subscriber.address);
+
+    expect(await product.ownerOf(1)).to.be.equal(subscriber.address);
 
     expect(await product.index()).to.be.equal(1); // value should be incremented
+  });
+
+  it("More than one users can subscribe", async function () {
+    await token.transfer(subscriber.address, getTokenAmount(5));
+    await tokenB.transfer(subscriber2.address, getTokenAmount(5));
+
+    // user approves contract to spend
+    await token
+      .connect(subscriber)
+      .approve(terminal.address, getTokenAmount(5));
+
+    // user approves contract to spend
+    await token
+      .connect(subscriber2)
+      .approve(terminal.address, getTokenAmount(5));
+
+    await terminal
+      .connect(subscriber)
+      .subscribe(chainIdBase, product.address, 1);
+
+
+    // subscriberB
+    await tokenB
+      .connect(subscriber2)
+      .approve(terminalB.address, getTokenAmount(5));
+    await terminalB
+      .connect(subscriber2)
+      .subscribe(chainIdBase, product.address, 1);
+
+    expect(await product.ownerOf(1)).to.be.equal(subscriber.address);
+    expect(await product.ownerOf(2)).to.be.equal(subscriber2.address);
   });
 });
