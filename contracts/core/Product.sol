@@ -13,6 +13,7 @@ contract Product is Ownable, ProductCore, ERC721Enumerable {
     // emit an event for subscribe
     event Subscribe(
         uint16 srcChainId,
+        address sourceAddress,
         address subscriberAddress
     );
 
@@ -30,7 +31,12 @@ contract Product is Ownable, ProductCore, ERC721Enumerable {
 
         // decode the message payload
         address subscriber = abi.decode(_payload, (address));
-        // address srcAddress = abi.decode(_srcAddress, (address));
+        
+        // use assembly to extract the address from the bytes memory parameter
+        address sourceAddress;
+        assembly {
+            sourceAddress := mload(add(_srcAddress, 20))
+        }
 
         // mint a NFT to the subscriber
         // TODO: should change it to the subscriber's address (decoded via the payload)
@@ -38,6 +44,6 @@ contract Product is Ownable, ProductCore, ERC721Enumerable {
 
         // TODO: Set the expiry timestamp of the NFT
 
-        emit Subscribe(_srcChainId,subscriber);
+        emit Subscribe(_srcChainId, sourceAddress, subscriber);
     }
 }

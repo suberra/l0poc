@@ -95,7 +95,7 @@ describe("Product: ", function () {
       terminal.connect(subscriber).subscribe(chainIdBase, product.address, 1)
     )
       .to.emit(product, "Subscribe")
-      .withArgs(chainIdRemoteA, subscriber.address);
+      .withArgs(chainIdRemoteA, terminal.address, subscriber.address);
 
     expect(await product.ownerOf(1)).to.be.equal(subscriber.address);
 
