@@ -1,10 +1,12 @@
-//SPDX-License-Identifier: Unlicense
+// SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.1;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/utils/Context.sol";
+import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
+import "@openzeppelin/contracts/utils/cryptography/draft-EIP712.sol";
 
-contract PeriodicAllowanceProxy is Context {
+contract PeriodicAllowanceProxy is Context, EIP712 {
     struct Allowance {
         uint256 lastChargeEpoch;
         uint256 allowance;
@@ -13,41 +15,101 @@ contract PeriodicAllowanceProxy is Context {
         uint256 secondsPerPeriod;
     }
 
-    // user address -> spender address -> token address -> Allowance
-    mapping(address => mapping(address => mapping(address => Allowance)))
-        public allowances;
+    constructor() EIP712("PeriodicAllowanceProxy", "1") {}
 
-    function approve(
+    // owner address -> spender address -> token address -> Allowance
+    mapping(address => mapping(address => mapping(address => Allowance))) _allowances;
+
+    // owner address -> nonce
+    mapping(address => uint256) public nonces;
+
+    function allowances(
+        address owner,
+        address token,
+        address spender
+    ) external view returns (Allowance memory) {
+        return _allowances[owner][spender][token];
+    }
+
+    function DOMAIN_SEPARATOR() external view returns (bytes32) {
+        return _domainSeparatorV4();
+    }
+
+    function _approve(
+        address owner,
         address token,
         address spender,
-        uint256 amount,
+        uint256 value,
         uint256 startTime,
         uint256 secondsPerPeriod
-    ) external {
-        if (amount == 0) {
-            delete allowances[_msgSender()][spender][token];
+    ) private {
+        if (value == 0) {
+            delete _allowances[owner][spender][token];
         } else {
             // don't bother checking for startTime validity
             require(secondsPerPeriod > 0, "secondsPerPeriod cannot be 0");
             Allowance memory allowance = Allowance({
                 lastChargeEpoch: 0,
-                allowance: amount,
+                allowance: value,
                 startTime: startTime,
-                amountPerPeriod: amount,
+                amountPerPeriod: value,
                 secondsPerPeriod: secondsPerPeriod
             });
 
-            allowances[_msgSender()][spender][token] = allowance;
+            _allowances[owner][spender][token] = allowance;
         }
+    }
+
+    function approve(
+        address token,
+        address spender,
+        uint256 value,
+        uint256 startTime,
+        uint256 secondsPerPeriod
+    ) external {
+        _approve(_msgSender(), token, spender, value, startTime, secondsPerPeriod);
+    }
+
+    function permit(
+        address owner,
+        address token,
+        address spender,
+        uint256 value,
+        uint256 startTime,
+        uint256 secondsPerPeriod,
+        uint256 deadline,
+        uint8 v,
+        bytes32 r,
+        bytes32 s
+    ) external {
+        require(deadline >= block.timestamp, "Permit expired");
+
+        uint256 nonce = nonces[owner]++; // incr
+        bytes32 structHash = keccak256(abi.encode(
+            keccak256("Permit(address owner,address token,address spender,uint256 value,uint256 startTime,uint256 secondsPerPeriod,uint256 nonce,uint256 deadline)"),
+            owner,
+            token,
+            spender,
+            value,
+            startTime,
+            secondsPerPeriod,
+            nonce,
+            deadline));
+        bytes32 digest = _hashTypedDataV4(structHash);
+
+        address recoveredSigner = ecrecover(digest, v, r, s);
+        require(recoveredSigner != address(0) && recoveredSigner == owner, "Invalid signature");
+
+        _approve(owner, token, spender, value, startTime, secondsPerPeriod);
     }
 
     function transferFrom(
         address token,
-        address sender,
+        address owner,
         address recipient,
         uint256 amount
     ) external {
-        Allowance storage allowance = allowances[sender][_msgSender()][token];
+        Allowance storage allowance = _allowances[owner][_msgSender()][token];
 
         uint256 amountPerPeriod = allowance.amountPerPeriod;
         uint256 startTime = allowance.startTime;
@@ -75,7 +137,7 @@ contract PeriodicAllowanceProxy is Context {
 
         // should we check if token is a valid contract too?
         require(
-            IERC20(token).transferFrom(sender, recipient, amount),
+            IERC20(token).transferFrom(owner, recipient, amount),
             "transferFrom failed"
         );
     }

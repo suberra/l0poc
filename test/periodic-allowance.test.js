@@ -37,8 +37,8 @@ describe("PeriodicAllowance", function () {
     it("Should not have any allowances set", async function () {
       const currentAllowance = await periodic.allowances(
         user.address,
-        spender.address,
-        token.address
+        token.address,
+        spender.address
       );
 
       expect(currentAllowance.lastChargeEpoch).to.equal(0);
@@ -63,8 +63,8 @@ describe("PeriodicAllowance", function () {
 
       const currentAllowance = await periodic.allowances(
         user.address,
-        spender.address,
-        token.address
+        token.address,
+        spender.address
       );
 
       expect(currentAllowance.lastChargeEpoch).to.equal(0);
@@ -99,8 +99,8 @@ describe("PeriodicAllowance", function () {
 
       const currentAllowance = await periodic.allowances(
         user.address,
-        spender.address,
-        token.address
+        token.address,
+        spender.address
       );
 
       expect(currentAllowance.lastChargeEpoch).to.equal(0);
@@ -133,8 +133,8 @@ describe("PeriodicAllowance", function () {
 
       const currentAllowance = await periodic.allowances(
         user.address,
-        spender.address,
-        token.address
+        token.address,
+        spender.address
       );
 
       expect(currentAllowance.lastChargeEpoch).to.equal(
@@ -181,8 +181,8 @@ describe("PeriodicAllowance", function () {
 
       const currentAllowance = await periodic.allowances(
         user.address,
-        spender.address,
-        token.address
+        token.address,
+        spender.address
       );
 
       expect(currentAllowance.lastChargeEpoch).to.equal(
@@ -220,8 +220,8 @@ describe("PeriodicAllowance", function () {
 
       const allowance1 = await periodic.allowances(
         user.address,
-        spender.address,
-        token.address
+        token.address,
+        spender.address
       );
 
       const epoch1 = ~~(
@@ -254,8 +254,8 @@ describe("PeriodicAllowance", function () {
 
       const allowance2 = await periodic.allowances(
         user.address,
-        spender.address,
-        token.address
+        token.address,
+        spender.address
       );
 
       const epoch2 = epoch1 + 1;
