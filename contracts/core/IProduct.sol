@@ -7,6 +7,12 @@ interface IProduct {
      */
     function subscribe(uint16 _dstchainId) external payable;
 
+
+    /**
+     * @notice Renews tokenId for another billing cycle
+     */
+    function renewFor(uint256 tokenId) external payable;
+
     /** Product info */
 
     /**
